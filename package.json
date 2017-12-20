@@ -1,0 +1,54 @@
+{
+  "name": "gitbucket-issue-estimation-server",
+  "version": "0.0.1",
+  "license": "MIT",
+  "author": {
+    "name": "Takumon",
+    "email": "inouetakumon@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Takumon/gitbucket-issue-estimation-server"
+  },
+  "engines": {
+    "node": "v8.9.X",
+    "npm": "5.5.X"
+  },
+  "scripts": {
+    "start": "npm-run-all -s build:server -p start:*",
+    "start:server": "run-p watch:server boot:server",
+    "watch:server": "tsc -w -p ./server/tsconfig.server.json",
+    "watch:server_test": "tsc -w -p ./server_test/tsconfig.server_test.json",
+    "run:server": "NODE_CONFIG_DIR=./dist/server/config NODE_ENV=production node ./dist/server/bin/www.js",
+    "boot:server": "NODE_CONFIG_DIR=./dist/server/config NODE_ENV=dev nodemon ./dist/server/bin/www.js",
+    "build": "run-s build:server",
+    "build:server": "run-s servercompile:ts servercompile:resources",
+    "servercompile:ts": "tsc -p ./server/tsconfig.server.json",
+    "servercompile:resources": "cpx \"./server/config/*\" ./dist/server/config -u",
+    "build:server_test": "tsc -p ./server/tsconfig.server.json",
+    "buildRun": "run-s build run:server",
+    "test": "run-p test:*",
+    "test:server": "MONGO_URL=mongodb://localhost:27018/test npm-run-all -s build:server_test -p watch:server_test  boot:server_test"
+  },
+  "private": true,
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.17.2",
+    "config": "^1.28.1",
+    "core-js": "^2.4.1",
+    "express": "^4.15.3",
+    "express-validator": "^4.2.1",
+    "log4js": "^2.3.12",
+    "moment": "^2.18.1",
+    "mongoose": "^4.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^8.0.53",
+    "cpx": "^1.5.0",
+    "nodemon": "^1.11.0",
+    "npm-run-all": "^4.0.2",
+    "ts-node": "^3.3.0",
+    "tslint": "^5.8.0",
+    "typescript": "^2.4.2"
+  }
+}
