@@ -7,7 +7,7 @@ import * as config from 'config';
 
 import * as ENV from './environment-config';
 import { systemLogger, errorLogger, accessLogHandler } from './logger';
-import { estimationRouter } from './routes/estimation';
+import { issueRouter } from './routes/issue';
 
 
 
@@ -31,7 +31,7 @@ class App {
   }
 
   private routes(): void {
-    this.express.use('/api/estimations', estimationRouter);
+    this.express.use('/api/v3/repos', issueRouter);
   }
 }
 

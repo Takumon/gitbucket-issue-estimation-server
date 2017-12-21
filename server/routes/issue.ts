@@ -3,14 +3,16 @@ import * as http from 'http';
 import { Router, Response } from 'express';
 import { check, oneOf, body, param, validationResult } from 'express-validator/check';
 
-import { Estimation } from '../models/estimation.model';
+import { Issue } from '../models/issue.model';
 import * as ENV from '../environment-config';
 
 
 /**
  * DBアクセス時に指定する検索条件
  */
-interface EstimationCondition {
+interface IssueCondition {
+  owner: string;
+  repo: string;
   /** issueのid */
   issueId?: any;
 }
@@ -21,13 +23,16 @@ interface EstimationCondition {
  * @param req リクエストオブジェクト
  * @param cb コールバック関数
  */
-function createCondition(req: any): EstimationCondition {
+function createCondition(req: any): IssueCondition {
   const query = req.query;
   const source = query.condition ?
     JSON.parse(query.condition) :
     {};
 
-  const condition: EstimationCondition = {};
+  const condition: IssueCondition = {
+    owner: req.params.owner,
+    repo: req.params.repo
+  };
 
   // issueIdで絞り込み
   const issueIds = source.issueId
@@ -49,11 +54,21 @@ const router: Router = Router();
 /**
  * 複数件検索
  */
-router.get('/', (req, res, next) => {
+router.get('/:owner/:repo/issues', [
+  param('owner')
+    .not().isEmpty().withMessage('リポジトリのグループまたはユーザを指定してください。'),
+  param('repo')
+    .not().isEmpty().withMessage('リポジトリを指定してください。'),
+], (req, res, next) => {
 
-  Estimation
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  Issue
   .find(createCondition(req))
-  .exec((err, estimations) => {
+  .exec((err, issues) => {
 
     if (err) {
       return res.status(500).json({
@@ -62,7 +77,7 @@ router.get('/', (req, res, next) => {
       });
     }
 
-    return res.status(200).json(estimations);
+    return res.status(200).json(issues);
   });
 });
 
@@ -71,11 +86,27 @@ router.get('/', (req, res, next) => {
 /**
  * 一件検索
  */
-router.get('/:issueId', (req, res, next) => {
+router.get('/:owner/:repo/issues/:issueId', [
+  param('owner')
+    .not().isEmpty().withMessage('リポジトリのグループまたはユーザを指定してください。'),
+  param('repo')
+    .not().isEmpty().withMessage('リポジトリを指定してください。'),
+  check('issueId')
+    .not().isEmpty().withMessage('issueIdを指定してください。'),
+], (req, res, next) => {
 
-  const condition = { issueId: req.params.issueId };
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
 
-  Estimation
+  const condition = {
+    owner: req.params.owner,
+    repo: req.params.repo,
+    issueId: req.params.issueId
+  };
+
+  Issue
     .find(condition)
     .exec((err, doc): any => {
       if (err) {
@@ -98,49 +129,12 @@ router.get('/:issueId', (req, res, next) => {
 
 
 /**
- * 一件登録
- */
-router.post('/', [
-  body('issueId')
-    .not().isEmpty().withMessage('issueのIdを指定してください')
-    .isNumeric().withMessage('issueのIdは数値型で指定してください'),
-  body('estimation')
-    .not().isEmpty().withMessage('issueの作業量を指定してください')
-    .isNumeric().withMessage('issueの作業量は数値型で指定してください'),
-], (req, res, next) => {
-
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  const model = new Estimation();
-  model.issueId = req.body.issueId;
-  model.estimation = req.body.estimation;
-
-  model.save((err, updated) => {
-    if (err) {
-      return res.status(500).json({
-        title: `${MODEL_NAME}の登録に失敗しました。`,
-        error: err.message
-      });
-    }
-
-    return res.status(200).json({
-      message: `${MODEL_NAME}を登録しました。`,
-      obj: updated
-    });
-  });
-});
-
-
-/**
- * 指定したidのissueがEstimationに存在するか
+ * 指定したidのissueが存在するか
  *
  * @param issueId issueのid
  */
-const isExistedEstimation = (issueId: String): Promise<boolean> => {
-  return Estimation
+const isExistedIssue = (issueId: String): Promise<boolean> => {
+  return Issue
     .findOne({ issueId: issueId})
     .exec()
     .then(target => {
@@ -155,11 +149,15 @@ const isExistedEstimation = (issueId: String): Promise<boolean> => {
 
 
 /**
- * 一件更新（差分更新）
+ * 一件更新または登録
  */
-router.put('/:issueId', [
+router.put('/:owner/:repo/issues/:issueId', [
+  param('owner')
+    .not().isEmpty().withMessage('リポジトリのグループまたはユーザを指定してください。'),
+  param('repo')
+    .not().isEmpty().withMessage('リポジトリを指定してください。'),
   param('issueId')
-    .custom(isExistedEstimation).withMessage('指定したissueIdのissueは存在しません。'),
+    .not().isEmpty().withMessage('issueのIdを指定してください。'),
   body('estimation')
     .not().isEmpty().withMessage('issueの作業量を指定してください。')
     .isNumeric().withMessage('issueの作業量は数値型で指定してください'),
@@ -170,9 +168,20 @@ router.put('/:issueId', [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const model = { estimation: req.body.estimation };
+  const modelKey = {
+    owner: req.params.owner,
+    repo: req.params.repo,
+    issueId: req.params.issueId,
+  };
 
-  Estimation.findOneAndUpdate({ 'issueId': req.params.issueId }, model, {new: true}, (err, target) => {
+  const model = {
+    owner: req.params.owner,
+    repo: req.params.repo,
+    issueId: req.params.issueId,
+    estimation: req.body.estimation
+  };
+
+  Issue.findOneAndUpdate(modelKey, model, {upsert: true, new: true}, (err, target) => {
 
     if (err) {
       return res.status(500).json({
@@ -192,16 +201,20 @@ router.put('/:issueId', [
 /**
  * 一件削除(物理削除)
  */
-router.delete('/:issueId', [
+router.delete('/:owner/:repo/issues/:issueId', [
+  param('owner')
+    .not().isEmpty().withMessage('リポジトリのグループまたはユーザを指定してください。'),
+  param('repo')
+    .not().isEmpty().withMessage('リポジトリを指定してください。'),
   param('issueId')
-  .custom(isExistedEstimation).withMessage('指定したissueIdのissueは存在しません。'),
+  .custom(isExistedIssue).withMessage('指定したissueIdのissueは存在しません。'),
 ], (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  Estimation.findOneAndRemove( { issueId: req.params.issueId } , (error, taget) => {
+  Issue.findOneAndRemove( { issueId: req.params.issueId } , (error, taget) => {
 
     if (error) {
       return res.status(500).json({
@@ -217,4 +230,4 @@ router.delete('/:issueId', [
   });
 });
 
-export { router as estimationRouter };
+export { router as issueRouter };
